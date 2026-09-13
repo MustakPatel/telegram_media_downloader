@@ -1,6 +1,7 @@
 import os
 import glob
 import subprocess
+import concurrent.futures
 import yt_dlp
 
 DEFAULT_DOWNLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "downloads"))
@@ -11,14 +12,13 @@ def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
-        'socket_timeout': 10,
+        'socket_timeout': 15,
         'retries': 2,
         'fragment_retries': 2,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best/bestvideo+bestaudio',
         'outtmpl': os.path.join(DEFAULT_DOWNLOAD_DIR, '%(title).50s_%(id)s.%(ext)s'),
-        'merge_output_format': 'mp4',
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     }
     if proxy:
@@ -28,10 +28,7 @@ def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
     return opts
 
 def extract_media_info(url: str, proxy: str = None) -> dict:
-    """
-    Extracts metadata from any web video/audio URL without downloading the file.
-    Supports YouTube, Instagram, Twitter, TikTok, HLS/m3u8, HTML5 video pages, etc.
-    """
+    """Extracts metadata from any web video/audio URL without downloading the file."""
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
     opts = get_yt_dlp_options({'extract_flat': True}, proxy=proxy)
     
@@ -66,10 +63,7 @@ def extract_media_info(url: str, proxy: str = None) -> dict:
         return {"status": "error", "message": err_msg}
 
 def split_video(input_filepath: str, max_part_size_mb: float = 40.0) -> list:
-    """
-    Splits video into parts under max_part_size_mb using fast FFmpeg stream copy (1 second speed, zero quality loss).
-    Returns list of part file paths.
-    """
+    """Splits video into parts under max_part_size_mb using fast FFmpeg stream copy."""
     if not os.path.exists(input_filepath):
         return [input_filepath]
         
@@ -107,11 +101,7 @@ def split_video(input_filepath: str, max_part_size_mb: float = 40.0) -> list:
 
     return parts if parts else [input_filepath]
 
-def download_video(url: str, proxy: str = None) -> dict:
-    """
-    Downloads media video in MP4 format.
-    Returns file path, filesize_mb, and title.
-    """
+def _download_video_internal(url: str, proxy: str = None) -> dict:
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
     opts = get_yt_dlp_options(proxy=proxy)
     
@@ -145,10 +135,19 @@ def download_video(url: str, proxy: str = None) -> dict:
             err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
         return {"status": "error", "message": err_msg}
 
-def download_audio(url: str, proxy: str = None) -> dict:
-    """
-    Extracts audio from video URL and converts it into MP3 format.
-    """
+def download_video(url: str, timeout_sec: int = 120, proxy: str = None) -> dict:
+    """Downloads video with a strict hard timeout of 120s to prevent infinite hanging on blocked links."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_download_video_internal, url, proxy)
+        try:
+            return future.result(timeout=timeout_sec)
+        except concurrent.futures.TimeoutError:
+            return {
+                "status": "error",
+                "message": "⏱️ Download Timed Out (120s Limit). This site blocks cloud server connections or has anti-bot Cloudflare protection."
+            }
+
+def _download_audio_internal(url: str, proxy: str = None) -> dict:
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
     opts = get_yt_dlp_options({
         'format': 'bestaudio/best',
@@ -183,6 +182,18 @@ def download_audio(url: str, proxy: str = None) -> dict:
         if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
             err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
         return {"status": "error", "message": err_msg}
+
+def download_audio(url: str, timeout_sec: int = 120, proxy: str = None) -> dict:
+    """Extracts MP3 audio with strict 120s hard timeout."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_download_audio_internal, url, proxy)
+        try:
+            return future.result(timeout=timeout_sec)
+        except concurrent.futures.TimeoutError:
+            return {
+                "status": "error",
+                "message": "⏱️ Audio Extraction Timed Out (120s Limit). This site blocks cloud server connections."
+            }
 
 def cleanup_file(filepath: str):
     """Safely removes temporary download file after dispatching to Telegram."""
