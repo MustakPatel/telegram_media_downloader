@@ -1,31 +1,39 @@
 import os
 import glob
+import subprocess
 import yt_dlp
 
 DEFAULT_DOWNLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "downloads"))
 
-def get_yt_dlp_options(extra_opts: dict = None) -> dict:
-    """Returns base yt-dlp configuration dictionary."""
+def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
+    """Returns base yt-dlp configuration dictionary with fast timeout and geo-bypass."""
     opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
+        'socket_timeout': 10,
+        'retries': 2,
+        'fragment_retries': 2,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(DEFAULT_DOWNLOAD_DIR, '%(title).50s_%(id)s.%(ext)s'),
         'merge_output_format': 'mp4',
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     }
+    if proxy:
+        opts['proxy'] = proxy
     if extra_opts:
         opts.update(extra_opts)
     return opts
 
-def extract_media_info(url: str) -> dict:
+def extract_media_info(url: str, proxy: str = None) -> dict:
     """
     Extracts metadata from any web video/audio URL without downloading the file.
     Supports YouTube, Instagram, Twitter, TikTok, HLS/m3u8, HTML5 video pages, etc.
     """
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
-    opts = get_yt_dlp_options({'extract_flat': True})
+    opts = get_yt_dlp_options({'extract_flat': True}, proxy=proxy)
     
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -52,28 +60,71 @@ def extract_media_info(url: str) -> dict:
                 "url": url
             }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        err_msg = str(e)
+        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
+            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
+        return {"status": "error", "message": err_msg}
 
-def download_video(url: str) -> dict:
+def split_video(input_filepath: str, max_part_size_mb: float = 40.0) -> list:
+    """
+    Splits video into parts under max_part_size_mb using fast FFmpeg stream copy (1 second speed, zero quality loss).
+    Returns list of part file paths.
+    """
+    if not os.path.exists(input_filepath):
+        return [input_filepath]
+        
+    orig_size_mb = os.path.getsize(input_filepath) / (1024 * 1024)
+    if orig_size_mb <= max_part_size_mb:
+        return [input_filepath]
+
+    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_filepath]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        duration = float(res.stdout.strip())
+    except Exception:
+        duration = 300.0
+
+    num_parts = int(orig_size_mb // max_part_size_mb) + 1
+    part_duration = duration / num_parts
+
+    parts = []
+    base, ext = os.path.splitext(input_filepath)
+
+    for i in range(num_parts):
+        start_time = i * part_duration
+        part_path = f"{base}_part{i+1}{ext}"
+        split_cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start_time),
+            "-i", input_filepath,
+            "-t", str(part_duration),
+            "-c", "copy",
+            part_path
+        ]
+        subprocess.run(split_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(part_path):
+            parts.append(part_path)
+
+    return parts if parts else [input_filepath]
+
+def download_video(url: str, proxy: str = None) -> dict:
     """
     Downloads media video in MP4 format.
     Returns file path, filesize_mb, and title.
     """
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
-    opts = get_yt_dlp_options()
+    opts = get_yt_dlp_options(proxy=proxy)
     
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Ensure mp4 extension after format merge
             base, _ = os.path.splitext(filename)
             mp4_filename = base + ".mp4"
             
             actual_filepath = mp4_filename if os.path.exists(mp4_filename) else filename
             if not os.path.exists(actual_filepath):
-                # Search for any matched file in download folder
                 matched = glob.glob(os.path.join(DEFAULT_DOWNLOAD_DIR, "*"))
                 if matched:
                     actual_filepath = matched[-1]
@@ -89,9 +140,12 @@ def download_video(url: str) -> dict:
                 "title": info.get("title", "Downloaded Video")
             }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        err_msg = str(e)
+        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
+            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
+        return {"status": "error", "message": err_msg}
 
-def download_audio(url: str) -> dict:
+def download_audio(url: str, proxy: str = None) -> dict:
     """
     Extracts audio from video URL and converts it into MP3 format.
     """
@@ -104,7 +158,7 @@ def download_audio(url: str) -> dict:
             'preferredquality': '192',
         }],
         'outtmpl': os.path.join(DEFAULT_DOWNLOAD_DIR, '%(title).50s_%(id)s.%(ext)s'),
-    })
+    }, proxy=proxy)
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -125,7 +179,10 @@ def download_audio(url: str) -> dict:
                 "title": info.get("title", "Downloaded Audio")
             }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        err_msg = str(e)
+        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
+            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
+        return {"status": "error", "message": err_msg}
 
 def cleanup_file(filepath: str):
     """Safely removes temporary download file after dispatching to Telegram."""
