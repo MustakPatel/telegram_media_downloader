@@ -129,7 +129,7 @@ def process_command_or_link(text: str, chat_id: str, token: str):
                 send_telegram_message(token, chat_id, f"⚠️ Audio size ({res['filesize_mb']} MB) exceeds Telegram limit.")
             cleanup_file(res["filepath"])
         else:
-            send_telegram_message(token, chat_id, f"⚠️ Audio download failed: {res.get('message')}")
+            send_telegram_message(token, chat_id, res["message"])
         return
 
     # Handle direct URL paste
@@ -165,7 +165,7 @@ def process_command_or_link(text: str, chat_id: str, token: str):
                 # Cleanup original file
                 cleanup_file(orig_filepath)
         else:
-            send_telegram_message(token, chat_id, f"⚠️ Video download failed: {res.get('message')}")
+            send_telegram_message(token, chat_id, res["message"])
         return
 
     send_telegram_message(token, chat_id, "Unknown command or link. Type /help to see usage instructions.")

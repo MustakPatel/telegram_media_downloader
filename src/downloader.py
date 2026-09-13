@@ -27,6 +27,51 @@ def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
         opts.update(extra_opts)
     return opts
 
+def format_download_error(err_msg: str) -> str:
+    """Formats raw yt-dlp error string into clear, human-readable Telegram alert."""
+    msg_lower = err_msg.lower()
+    
+    if "418" in msg_lower or "teapot" in msg_lower:
+        return """
+⚠️ <b>DOWNLOAD BLOCKED BY WEBSITE (HTTP 418)</b> ⚠️
+
+📌 <b>Reason:</b> Cloudflare / Anti-Bot Shield
+💡 <b>Explanation:</b> This website (e.g. PornHub/Adult Sites) specifically blocks Cloud Data-Center IPs (Render / AWS) from downloading videos.
+👉 <b>Action:</b> You can proceed with your other tasks! Try YouTube, Instagram Reels, TikTok, Twitter, or another public site.
+""".strip()
+    elif "403" in msg_lower or "forbidden" in msg_lower:
+        return """
+⚠️ <b>ACCESS FORBIDDEN (HTTP 403)</b> ⚠️
+
+📌 <b>Reason:</b> Website Access Restricted
+💡 <b>Explanation:</b> The target server denied access to the cloud downloader IP.
+👉 <b>Action:</b> The video might be private, geoblocked, or DRM protected.
+""".strip()
+    elif "timed out" in msg_lower or "connection" in msg_lower:
+        return """
+⚠️ <b>CONNECTION TIMED OUT</b> ⚠️
+
+📌 <b>Reason:</b> Server Connection Timed Out
+💡 <b>Explanation:</b> The website server did not respond within the time limit.
+""".strip()
+    elif "age" in msg_lower or "login" in msg_lower:
+        return """
+⚠️ <b>LOGIN / AGE RESTRICTED CONTENT</b> ⚠️
+
+📌 <b>Reason:</b> Account Login Required
+💡 <b>Explanation:</b> This video requires an active user login or age verification.
+""".strip()
+    else:
+        clean_err = err_msg.replace("ERROR:", "").strip()
+        if len(clean_err) > 200:
+            clean_err = clean_err[:200] + "..."
+        return f"""
+⚠️ <b>VIDEO DOWNLOAD UNABLE TO COMPLETE</b> ⚠️
+
+📌 <b>Detail:</b> <code>{clean_err}</code>
+💡 <b>Note:</b> You can proceed with your other tasks!
+""".strip()
+
 def extract_media_info(url: str, proxy: str = None) -> dict:
     """Extracts metadata from any web video/audio URL without downloading the file."""
     os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
@@ -36,7 +81,7 @@ def extract_media_info(url: str, proxy: str = None) -> dict:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if not info:
-                return {"status": "error", "message": "Could not extract media metadata."}
+                return {"status": "error", "message": format_download_error("Could not extract media metadata.")}
             
             title = info.get("title", "Web Media Video")
             duration = info.get("duration", 0)
@@ -57,10 +102,7 @@ def extract_media_info(url: str, proxy: str = None) -> dict:
                 "url": url
             }
     except Exception as e:
-        err_msg = str(e)
-        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
-            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
-        return {"status": "error", "message": err_msg}
+        return {"status": "error", "message": format_download_error(str(e))}
 
 def split_video(input_filepath: str, max_part_size_mb: float = 40.0) -> list:
     """Splits video into parts under max_part_size_mb using fast FFmpeg stream copy."""
@@ -130,10 +172,7 @@ def _download_video_internal(url: str, proxy: str = None) -> dict:
                 "title": info.get("title", "Downloaded Video")
             }
     except Exception as e:
-        err_msg = str(e)
-        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
-            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
-        return {"status": "error", "message": err_msg}
+        return {"status": "error", "message": format_download_error(str(e))}
 
 def download_video(url: str, timeout_sec: int = 120, proxy: str = None) -> dict:
     """Downloads video with a strict hard timeout of 120s to prevent infinite hanging on blocked links."""
@@ -144,7 +183,7 @@ def download_video(url: str, timeout_sec: int = 120, proxy: str = None) -> dict:
         except concurrent.futures.TimeoutError:
             return {
                 "status": "error",
-                "message": "⏱️ Download Timed Out (120s Limit). This site blocks cloud server connections or has anti-bot Cloudflare protection."
+                "message": format_download_error("Download timed out (120s Limit). Connection timed out.")
             }
 
 def _download_audio_internal(url: str, proxy: str = None) -> dict:
@@ -178,10 +217,7 @@ def _download_audio_internal(url: str, proxy: str = None) -> dict:
                 "title": info.get("title", "Downloaded Audio")
             }
     except Exception as e:
-        err_msg = str(e)
-        if "timed out" in err_msg.lower() or "connection" in err_msg.lower():
-            err_msg = "ISP/Domain Blocked (Connection Timed Out). Website requires VPN/Proxy on server."
-        return {"status": "error", "message": err_msg}
+        return {"status": "error", "message": format_download_error(str(e))}
 
 def download_audio(url: str, timeout_sec: int = 120, proxy: str = None) -> dict:
     """Extracts MP3 audio with strict 120s hard timeout."""
