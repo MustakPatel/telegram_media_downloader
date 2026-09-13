@@ -170,6 +170,8 @@ def process_command_or_link(text: str, chat_id: str, token: str):
 
     send_telegram_message(token, chat_id, "Unknown command or link. Type /help to see usage instructions.")
 
+import threading
+
 def start_bot_loop(token: str = DEFAULT_BOT_TOKEN):
     """Starts the long-polling Telegram Bot worker and background download server."""
     if not token:
@@ -196,13 +198,19 @@ def start_bot_loop(token: str = DEFAULT_BOT_TOKEN):
 
                     if text and sender_chat_id:
                         print(f"Received link/command: '{text}' from Chat ID: {sender_chat_id}")
-                        process_command_or_link(text, sender_chat_id, token)
+                        # Process each request asynchronously in a separate background thread
+                        t = threading.Thread(
+                            target=process_command_or_link,
+                            args=(text, sender_chat_id, token),
+                            daemon=True
+                        )
+                        t.start()
             elif resp.status_code == 409:
                 print("Telegram API 409 Conflict. Retrying in 5s...")
                 time.sleep(5)
         except Exception as e:
             print(f"Telegram long-polling error: {e}")
-        time.sleep(2)
+        time.sleep(1)
 
 if __name__ == "__main__":
     start_bot_loop()
