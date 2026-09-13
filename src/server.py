@@ -3,8 +3,13 @@ import os
 import sys
 import threading
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path.insert(0, os.path.abspath("."))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+src_dir = os.path.abspath(os.path.dirname(__file__))
+
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 try:
     from src.downloader import DEFAULT_DOWNLOAD_DIR

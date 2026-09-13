@@ -1,6 +1,11 @@
-import pytest
+import sys
 import os
-from src.downloader import extract_media_info, get_yt_dlp_options
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+try:
+    from src.downloader import extract_media_info, get_yt_dlp_options
+except ModuleNotFoundError:
+    from downloader import extract_media_info, get_yt_dlp_options
 
 def test_yt_dlp_options():
     opts = get_yt_dlp_options()
