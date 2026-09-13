@@ -5,11 +5,16 @@ import re
 import urllib.parse
 import requests
 
-# Ensure root folder is in python path
+# Ensure root folder and current working directory are in python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath("."))
 
-from src.downloader import extract_media_info, download_video, download_audio, split_video, cleanup_file
-from src.server import start_download_server
+try:
+    from src.downloader import extract_media_info, download_video, download_audio, split_video, cleanup_file
+    from src.server import start_download_server
+except ModuleNotFoundError:
+    from downloader import extract_media_info, download_video, download_audio, split_video, cleanup_file
+    from server import start_download_server
 
 DEFAULT_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8862252811:AAEdkDx0sXYTySvVMiN7jiCUsTqCPOpvNj8")
 DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8530348020")
@@ -163,7 +168,7 @@ def start_bot_loop(token: str = DEFAULT_BOT_TOKEN):
         print("Telegram bot token required. Worker idle.")
         return
 
-    # Start Flask direct download server on port 5050
+    # Start Flask direct download server on port 5050/PORT
     start_download_server(port=SERVER_PORT)
 
     url = f"https://api.telegram.org/bot{token.strip()}"
