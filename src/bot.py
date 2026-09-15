@@ -137,35 +137,46 @@ def process_command_or_link(text: str, chat_id: str, token: str):
     if urls:
         target_url = urls[0]
         send_telegram_message(token, chat_id, "📥 Processing & Downloading HD Video... Please wait.")
-        res = download_video(target_url)
         
-        if res["status"] == "success":
-            orig_filepath = res["filepath"]
-            orig_size_mb = res["filesize_mb"]
-            title = res["title"]
+        try:
+            res = download_video(target_url)
+            
+            if res["status"] == "success":
+                orig_filepath = res["filepath"]
+                orig_size_mb = res["filesize_mb"]
+                title = res["title"]
 
-            # If file fits in 1 single Telegram video upload (<= 45MB)
-            if orig_size_mb <= 45.0:
-                caption = f"🎬 <b>{title}</b>\n💾 Size: {orig_size_mb} MB"
-                send_telegram_message(token, chat_id, "📤 Uploading HD Video to Telegram...")
-                send_telegram_video(token, chat_id, orig_filepath, caption=caption)
-                cleanup_file(orig_filepath)
+                # If file fits in 1 single Telegram video upload (<= 45MB)
+                if orig_size_mb <= 45.0:
+                    caption = f"🎬 <b>{title}</b>\n💾 Size: {orig_size_mb} MB"
+                    send_telegram_message(token, chat_id, "📤 Uploading HD Video to Telegram...")
+                    uploaded = send_telegram_video(token, chat_id, orig_filepath, caption=caption)
+                    if not uploaded:
+                        fallback_url = get_public_download_url(res["filename"])
+                        send_telegram_message(token, chat_id, f"⚠️ <b>Direct Upload Limit Exceeded</b>\n📥 <a href='{fallback_url}'>Click here to Download / Watch Video Directly</a>")
+                    cleanup_file(orig_filepath)
+                else:
+                    # File is > 45MB (e.g. 92MB, 500MB, 1GB). Split into 40MB playable parts!
+                    send_telegram_message(token, chat_id, f"⚡ <b>Large Video File Detected ({orig_size_mb:.1f} MB)</b>\n✂️ Splitting into playable HD video parts for Telegram upload...")
+                    parts_list = split_video(orig_filepath, max_part_size_mb=40.0)
+
+                    for idx, part_path in enumerate(parts_list, start=1):
+                        part_size = round(os.path.getsize(part_path) / (1024 * 1024), 2)
+                        part_caption = f"🎬 <b>{title}</b> (Part {idx}/{len(parts_list)})\n💾 Size: {part_size} MB"
+                        send_telegram_message(token, chat_id, f"📤 Uploading Video Part {idx}/{len(parts_list)} to Telegram...")
+                        uploaded_part = send_telegram_video(token, chat_id, part_path, caption=part_caption)
+                        if not uploaded_part:
+                            part_url = get_public_download_url(os.path.basename(part_path))
+                            send_telegram_message(token, chat_id, f"⚠️ <b>Part {idx} Link:</b> <a href='{part_url}'>Download Part {idx} Directly</a>")
+                        cleanup_file(part_path)
+
+                    # Cleanup original file
+                    cleanup_file(orig_filepath)
             else:
-                # File is > 45MB (e.g. 92MB, 500MB, 1GB). Split into 40MB playable parts!
-                send_telegram_message(token, chat_id, f"⚡ <b>Large Video File Detected ({orig_size_mb:.1f} MB)</b>\n✂️ Splitting into playable HD video parts for Telegram upload...")
-                parts_list = split_video(orig_filepath, max_part_size_mb=40.0)
-
-                for idx, part_path in enumerate(parts_list, start=1):
-                    part_size = round(os.path.getsize(part_path) / (1024 * 1024), 2)
-                    part_caption = f"🎬 <b>{title}</b> (Part {idx}/{len(parts_list)})\n💾 Size: {part_size} MB"
-                    send_telegram_message(token, chat_id, f"📤 Uploading Video Part {idx}/{len(parts_list)} to Telegram...")
-                    send_telegram_video(token, chat_id, part_path, caption=part_caption)
-                    cleanup_file(part_path)
-
-                # Cleanup original file
-                cleanup_file(orig_filepath)
-        else:
-            send_telegram_message(token, chat_id, res["message"])
+                send_telegram_message(token, chat_id, res["message"])
+        except Exception as err:
+            print(f"Error processing link {target_url}: {err}")
+            send_telegram_message(token, chat_id, f"⚠️ <b>ERROR:</b> Download failed. <code>{str(err)[:150]}</code>")
         return
 
     send_telegram_message(token, chat_id, "Unknown command or link. Type /help to see usage instructions.")
