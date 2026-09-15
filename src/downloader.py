@@ -26,7 +26,8 @@ def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
         },
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb']
+                'player_client': ['android', 'ios', 'tv'],
+                'player_skip': ['web', 'mweb', 'web_creator']
             }
         }
     }
