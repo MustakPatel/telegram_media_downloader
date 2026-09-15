@@ -30,6 +30,12 @@ def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
             }
         }
     }
+    
+    # Check for cookie file or env var
+    cookie_path = os.environ.get('COOKIE_FILE') or os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    if os.path.exists(cookie_path):
+        opts['cookiefile'] = cookie_path
+
     if proxy:
         opts['proxy'] = proxy
     if extra_opts:
@@ -40,7 +46,15 @@ def format_download_error(err_msg: str) -> str:
     """Formats raw yt-dlp error string into clear, human-readable Telegram alert."""
     msg_lower = err_msg.lower()
     
-    if "418" in msg_lower or "teapot" in msg_lower:
+    if "redirected to the login page" in msg_lower or "exceeded the rate-limit" in msg_lower or "login required" in msg_lower:
+        return """
+⚠️ <b>INSTAGRAM / PLATFORM RATE-LIMIT</b> ⚠️
+
+📌 <b>Reason:</b> Cloud Datacenter IP Rate-Limited
+💡 <b>Explanation:</b> Instagram blocks anonymous media downloads from cloud server IPs.
+👉 <b>Action:</b> Try downloading YouTube, TikTok, Twitter/X, Pinterest, or direct media links!
+""".strip()
+    elif "418" in msg_lower or "teapot" in msg_lower:
         return """
 ⚠️ <b>DOWNLOAD BLOCKED BY WEBSITE (HTTP 418)</b> ⚠️
 
