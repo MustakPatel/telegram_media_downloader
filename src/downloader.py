@@ -7,19 +7,28 @@ import yt_dlp
 DEFAULT_DOWNLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "downloads"))
 
 def get_yt_dlp_options(extra_opts: dict = None, proxy: str = None) -> dict:
-    """Returns base yt-dlp configuration dictionary with fast timeout and geo-bypass."""
+    """Returns base yt-dlp configuration dictionary with fast timeout, android/ios player clients, and geo-bypass."""
     opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
-        'socket_timeout': 15,
-        'retries': 2,
-        'fragment_retries': 2,
+        'socket_timeout': 20,
+        'retries': 3,
+        'fragment_retries': 3,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'format': 'best/bestvideo+bestaudio',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(DEFAULT_DOWNLOAD_DIR, '%(title).50s_%(id)s.%(ext)s'),
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1',
+        'http_headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'mweb']
+            }
+        }
     }
     if proxy:
         opts['proxy'] = proxy
@@ -36,8 +45,8 @@ def format_download_error(err_msg: str) -> str:
 ⚠️ <b>DOWNLOAD BLOCKED BY WEBSITE (HTTP 418)</b> ⚠️
 
 📌 <b>Reason:</b> Cloudflare / Anti-Bot Shield
-💡 <b>Explanation:</b> This website (e.g. PornHub/Adult Sites) specifically blocks Cloud Data-Center IPs (Render / AWS) from downloading videos.
-👉 <b>Action:</b> You can proceed with your other tasks! Try YouTube, Instagram Reels, TikTok, Twitter, or another public site.
+💡 <b>Explanation:</b> This website specifically blocks Cloud Data-Center IPs from downloading videos.
+👉 <b>Action:</b> Try YouTube, Instagram Reels, TikTok, Twitter, or another public site.
 """.strip()
     elif "403" in msg_lower or "forbidden" in msg_lower:
         return """
@@ -54,12 +63,12 @@ def format_download_error(err_msg: str) -> str:
 📌 <b>Reason:</b> Server Connection Timed Out
 💡 <b>Explanation:</b> The website server did not respond within the time limit.
 """.strip()
-    elif "age" in msg_lower or "login" in msg_lower:
+    elif "confirm your age" in msg_lower or "private video" in msg_lower or "members-only" in msg_lower:
         return """
-⚠️ <b>LOGIN / AGE RESTRICTED CONTENT</b> ⚠️
+⚠️ <b>PRIVATE / AGE RESTRICTED CONTENT</b> ⚠️
 
 📌 <b>Reason:</b> Account Login Required
-💡 <b>Explanation:</b> This video requires an active user login or age verification.
+💡 <b>Explanation:</b> This specific video is set to Private or requires a signed-in account on the target site.
 """.strip()
     else:
         clean_err = err_msg.replace("ERROR:", "").strip()
@@ -69,7 +78,7 @@ def format_download_error(err_msg: str) -> str:
 ⚠️ <b>VIDEO DOWNLOAD UNABLE TO COMPLETE</b> ⚠️
 
 📌 <b>Detail:</b> <code>{clean_err}</code>
-💡 <b>Note:</b> You can proceed with your other tasks!
+💡 <b>Note:</b> Please check if the URL link is valid and public!
 """.strip()
 
 def extract_media_info(url: str, proxy: str = None) -> dict:

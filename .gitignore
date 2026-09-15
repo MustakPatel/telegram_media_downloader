@@ -1,1 +1,5 @@
-venv/\n__pycache__/\n*.pyc\ndownloads/\n.pytest_cache/
+venv/
+__pycache__/
+*.pyc
+downloads/
+.pytest_cache/
